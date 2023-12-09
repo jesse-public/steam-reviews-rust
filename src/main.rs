@@ -9,8 +9,6 @@ use std::io::{LineWriter, Write};
 use std::process::exit;
 use url::form_urlencoded;
 
-const REVIEWS_PER_PAGE: u32 = 50;
-
 fn main() {
     let args: Vec<String> = env::args().collect();
 
@@ -38,11 +36,12 @@ fn scrape_reviews(app_id: u32) {
     file.write_all(format!("[Reviews for {app_id}]\n\n").as_bytes())
         .expect("Failed to write");
 
-    loop {
-        let url = get_url(&app_id, &REVIEWS_PER_PAGE, &cursor);
+    println!("Fetching reviews for {app_id}...");
 
-        println!("Fetching reviews for {app_id}...");
-        println!("url: {}", url);
+    loop {
+        let url = get_url(&app_id, &cursor);
+
+        println!("{}", cursor);
 
         let mut json = fetch(&url);
 
@@ -51,8 +50,7 @@ fn scrape_reviews(app_id: u32) {
         println!("review count for page {}", reviews.len());
 
         if reviews.len() == 0 {
-            println!("No reviews in response. Terminating.");
-            println!("Reviews scraped: {}", reviews_scraped);
+            println!("No reviews in response of url: {}. Terminating.", url);
             break;
         }
 
@@ -65,32 +63,42 @@ fn scrape_reviews(app_id: u32) {
         reviews_scraped += reviews.len();
 
         cursor = match json["cursor"].take_string() {
-            Some(cursor) => {
-                println!("cursor {}", cursor);
-                cursor
-            }
+            Some(cursor) => cursor,
             None => {
                 println!("No cursor. Terminating.");
-                println!("Reviews scraped: {}", reviews_scraped);
                 break;
             }
         };
     }
+
+    println!("Reviews scraped: {}", reviews_scraped);
 }
 
-fn get_url(app_id: &u32, num_per_page: &u32, cursor: &String) -> String {
+fn get_url(app_id: &u32, cursor: &String) -> String {
     let base_url = format!("https://store.steampowered.com/appreviews/{app_id}");
     let encoded: String = form_urlencoded::Serializer::new(String::new())
         .append_pair("json", "1")
-        .append_pair("purchase_type", "all")
-        .append_pair("num_per_page", &format!("{num_per_page}"))
+        .append_pair("cursor", cursor)
+        .append_pair("day_range", "0")
+        .append_pair("start_date", "-1")
+        .append_pair("end_date", "-1")
+        .append_pair("date_range_type", "all")
         .append_pair("filter", "recent")
-        .append_pair("cursor", &format!("{cursor}"))
+        .append_pair("language", "english")
+        .append_pair("l", "english")
+        .append_pair("review_type", "all")
+        .append_pair("purchase_type", "all")
+        .append_pair("playtime_filter_min", "0")
+        .append_pair("playtime_filter_max", "0")
+        .append_pair("filter_offtopic_activity", "0")
         .finish();
-
     let query = encoded.to_string();
 
-    format!("{base_url}?{query}")
+    let url = format!("{base_url}?{query}");
+
+    println!("url: {}", url);
+
+    url
 }
 
 fn write_to_file(file: &mut LineWriter<File>, reviews: &JsonValue) -> std::io::Result<()> {
@@ -98,7 +106,7 @@ fn write_to_file(file: &mut LineWriter<File>, reviews: &JsonValue) -> std::io::R
         let review_id = &review["recommendationid"];
         let review_text = &review["review"];
 
-        println!("Writing review {review_id}...");
+        // println!("Writing review {review_id}...");
 
         file.write_all(format!("Review {review_id}:\n{review_text}\n\n").as_bytes())?;
 

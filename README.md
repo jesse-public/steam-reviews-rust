@@ -7,5 +7,5 @@ All reviews of each provided app id are scaped and saved in a corresponding `.tx
 ## Usage
 
 ```bash
-steam-reviews-rust get 1174180 782330 1135690
+steam-reviews-rust 1174180 782330 1135690
 ```
