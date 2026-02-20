@@ -3,6 +3,7 @@ mod options;
 
 use fetch::fetch;
 use json::JsonValue;
+use std::collections::HashMap;
 use std::env;
 use std::fs::File;
 use std::io::{LineWriter, Write};
@@ -18,31 +19,58 @@ fn main() {
     }
 
     let app_ids = options::extract_app_ids(&args);
+    let mut review_counts = HashMap::new();
+    let mut total_review_count: usize = 0;
 
-    println!("[INFO] app_ids {:?}", app_ids);
+    println!("[DEBUG] app_ids {:?}", app_ids);
 
-    for app_id in app_ids {
-        scrape_reviews(app_id);
+    for &app_id in &app_ids {
+        let review_count = scrape_reviews(app_id);
+
+        total_review_count += review_count;
+        review_counts.insert(app_id, review_count);
     }
+
+    println!();
+    println!("[INFO] Results");
+    for &app_id in &app_ids {
+        let review_count = review_counts.get(&app_id).expect(
+            format!(
+                "[ERROR] Missing review_count for app_id: {}. Terminating.",
+                app_id
+            )
+            .as_str(),
+        );
+        println!("[INFO] app_id: {} review_count: {}", app_id, review_count);
+    }
+    println!("[INFO] total_review_count: {}", total_review_count);
+    println!();
 }
 
-fn scrape_reviews(app_id: u32) {
+fn scrape_reviews(app_id: u32) -> usize {
     let file_name = format!("{app_id}.txt");
-    let file = File::create(&file_name).expect("Could not create file {file_name}");
+    let file =
+        File::create(&file_name).expect("[ERROR] Could not create file {file_name}. Terminating.");
     let mut file = LineWriter::new(file);
     let mut cursor = String::from("*");
     let mut reviews_scraped: usize = 0;
 
     file.write_all(format!("[Reviews for {app_id}]\n\n").as_bytes())
-        .expect("[ERROR] Failed to write");
+        .expect(
+            format!(
+                "[ERROR] Failed to write reviews for app_id: {}. Terminating.",
+                app_id
+            )
+            .as_str(),
+        );
 
-    println!("[INFO] Starting scraping of {app_id}...");
+    println!("[DEBUG] Starting scraping of {app_id}");
 
     loop {
         let url = get_url(&app_id, &cursor);
 
         println!(
-            "[INFO] Fetching reviews for app_id: {} url: {} cursor: {}",
+            "[DEBUG] Fetching reviews for app_id: {} url: {} cursor: {}",
             app_id, url, cursor
         );
 
@@ -52,18 +80,20 @@ fn scrape_reviews(app_id: u32) {
 
         if success != 1 {
             panic!(
-                "[ERROR] Unsuccessful response from url: {}. success: {}, Terminating.",
-                url, success
+                "[ERROR] Unsuccessful response from url: {}. Terminating.",
+                url
             );
+
+            // TODO(optional): Exponential backoff
         }
 
         let reviews = json["reviews"].take();
 
-        println!("[INFO] Review count for page {}", reviews.len());
+        println!("[DEBUG] Review count for page {}", reviews.len());
 
         if reviews.len() == 0 {
             println!(
-                "[INFO] No reviews in response of url: {}. Terminating.",
+                "[DEBUG] No reviews in response of url: {}. Terminating.",
                 url
             );
             break;
@@ -71,7 +101,7 @@ fn scrape_reviews(app_id: u32) {
 
         write_to_file(&mut file, &reviews)
             .map_err(|err| {
-                panic!("[ERROR] Error writing reviews: {err}");
+                panic!("[ERROR] Error writing reviews: {err}. Terminating.");
             })
             .ok();
 
@@ -90,6 +120,8 @@ fn scrape_reviews(app_id: u32) {
         app_id, reviews_scraped
     );
     println!();
+
+    reviews_scraped
 }
 
 fn get_url(app_id: &u32, cursor: &String) -> String {
@@ -123,7 +155,9 @@ fn write_to_file(file: &mut LineWriter<File>, reviews: &JsonValue) -> std::io::R
         let review_text = &review["review"];
 
         if creation_timestamp.as_u32().unwrap() > 1771617810 {
-            panic!("[ERROR] Review creation_date is more recent than end_date filter! Exiting.");
+            panic!(
+                "[ERROR] Review creation_date is more recent than end_date filter. Terminating."
+            );
         }
 
         file.write_all(format!("Review {review_id}:\n{review_text}\n\n").as_bytes())?;
