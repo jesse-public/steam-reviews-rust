@@ -31,8 +31,15 @@ fn main() {
         review_counts.insert(app_id, review_count);
     }
 
+    record_results(app_ids, review_counts);
+}
+
+fn record_results(app_ids: Vec<u32>, review_counts: HashMap<u32, usize>) {
+    let mut total_review_count: usize = 0;
+
     println!();
     println!("[INFO] Results");
+
     for &app_id in &app_ids {
         let review_count = review_counts.get(&app_id).expect(
             format!(
@@ -41,8 +48,10 @@ fn main() {
             )
             .as_str(),
         );
+        total_review_count += review_count;
         println!("[INFO] app_id: {} review_count: {}", app_id, review_count);
     }
+
     println!("[INFO] total_review_count: {}", total_review_count);
     println!();
 }
