@@ -20,14 +20,12 @@ fn main() {
 
     let app_ids = options::extract_app_ids(&args);
     let mut review_counts = HashMap::new();
-    let mut total_review_count: usize = 0;
 
     println!("[DEBUG] app_ids {:?}", app_ids);
 
     for &app_id in &app_ids {
         let review_count = scrape_reviews(app_id);
 
-        total_review_count += review_count;
         review_counts.insert(app_id, review_count);
     }
 
@@ -35,10 +33,22 @@ fn main() {
 }
 
 fn record_results(app_ids: Vec<u32>, review_counts: HashMap<u32, usize>) {
+    let file_name_suffix = app_ids
+        .iter()
+        .map(|n| n.to_string())
+        .collect::<Vec<String>>()
+        .join("-");
+    let file_name = format!("results-{}.txt", file_name_suffix);
+    let mut file = File::create(&file_name)
+        .expect(format!("[ERROR] Could not create file {file_name}. Terminating.").as_str());
+
     let mut total_review_count: usize = 0;
 
     println!();
     println!("[INFO] Results");
+
+    file.write_all(format!("Results\n\n").as_bytes())
+        .expect("[ERROR] Failed to write results. Terminating.");
 
     for &app_id in &app_ids {
         let review_count = review_counts.get(&app_id).expect(
@@ -48,18 +58,26 @@ fn record_results(app_ids: Vec<u32>, review_counts: HashMap<u32, usize>) {
             )
             .as_str(),
         );
+
         total_review_count += review_count;
+
         println!("[INFO] app_id: {} review_count: {}", app_id, review_count);
+
+        file.write_all(format!("app_id: {} review_count: {}\n", app_id, review_count).as_bytes())
+            .expect("[ERROR] Failed to write results. Terminating.");
     }
 
     println!("[INFO] total_review_count: {}", total_review_count);
     println!();
+
+    file.write_all(format!("\ntotal_review_count: {}\n", total_review_count).as_bytes())
+        .expect("[ERROR] Failed to write results. Terminating.");
 }
 
 fn scrape_reviews(app_id: u32) -> usize {
     let file_name = format!("{app_id}.txt");
-    let file =
-        File::create(&file_name).expect("[ERROR] Could not create file {file_name}. Terminating.");
+    let file = File::create(&file_name)
+        .expect(format!("[ERROR] Could not create file {file_name}. Terminating.").as_str());
     let mut file = LineWriter::new(file);
     let mut cursor = String::from("*");
     let mut reviews_scraped: usize = 0;
@@ -108,7 +126,7 @@ fn scrape_reviews(app_id: u32) -> usize {
             break;
         }
 
-        write_to_file(&mut file, &reviews)
+        write_reviews(&mut file, &reviews)
             .map_err(|err| {
                 panic!("[ERROR] Error writing reviews: {err}. Terminating.");
             })
@@ -157,7 +175,7 @@ fn get_url(app_id: &u32, cursor: &String) -> String {
     format!("{base_url}?{query}")
 }
 
-fn write_to_file(file: &mut LineWriter<File>, reviews: &JsonValue) -> std::io::Result<()> {
+fn write_reviews(file: &mut LineWriter<File>, reviews: &JsonValue) -> std::io::Result<()> {
     for review in reviews.members() {
         let creation_timestamp = &review["timestamp_created"];
         let review_id = &review["recommendationid"];
