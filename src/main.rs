@@ -19,7 +19,7 @@ fn main() {
 
     let app_ids = options::extract_app_ids(&args);
 
-    println!("app_ids {:?}", app_ids);
+    println!("[INFO] app_ids {:?}", app_ids);
 
     for app_id in app_ids {
         scrape_reviews(app_id);
@@ -34,29 +34,44 @@ fn scrape_reviews(app_id: u32) {
     let mut reviews_scraped: usize = 0;
 
     file.write_all(format!("[Reviews for {app_id}]\n\n").as_bytes())
-        .expect("Failed to write");
+        .expect("[ERROR] Failed to write");
 
-    println!("Fetching reviews for {app_id}...");
+    println!("[INFO] Starting scraping of {app_id}...");
 
     loop {
         let url = get_url(&app_id, &cursor);
 
-        println!("{}", cursor);
+        println!(
+            "[INFO] Fetching reviews for app_id: {} url: {} cursor: {}",
+            app_id, url, cursor
+        );
 
         let mut json = fetch(&url);
 
+        let success = json["success"].take();
+
+        if success != 1 {
+            panic!(
+                "[ERROR] Unsuccessful response from url: {}. success: {}, Terminating.",
+                url, success
+            );
+        }
+
         let reviews = json["reviews"].take();
 
-        println!("review count for page {}", reviews.len());
+        println!("[INFO] Review count for page {}", reviews.len());
 
         if reviews.len() == 0 {
-            println!("No reviews in response of url: {}. Terminating.", url);
+            println!(
+                "[INFO] No reviews in response of url: {}. Terminating.",
+                url
+            );
             break;
         }
 
         write_to_file(&mut file, &reviews)
             .map_err(|err| {
-                println!("Error writing reviews: {err}");
+                panic!("[ERROR] Error writing reviews: {err}");
             })
             .ok();
 
@@ -65,13 +80,16 @@ fn scrape_reviews(app_id: u32) {
         cursor = match json["cursor"].take_string() {
             Some(cursor) => cursor,
             None => {
-                println!("No cursor. Terminating.");
-                break;
+                panic!("[ERROR] No cursor. Terminating.");
             }
         };
     }
 
-    println!("Reviews scraped: {}", reviews_scraped);
+    println!(
+        "[INFO] Finished scraping of app_id: {}. Reviews scraped: {}",
+        app_id, reviews_scraped
+    );
+    println!();
 }
 
 fn get_url(app_id: &u32, cursor: &String) -> String {
@@ -80,9 +98,10 @@ fn get_url(app_id: &u32, cursor: &String) -> String {
         .append_pair("json", "1")
         .append_pair("cursor", cursor)
         .append_pair("day_range", "0")
-        .append_pair("start_date", "-1")
-        .append_pair("end_date", "-1")
-        .append_pair("date_range_type", "all")
+        // Date is seconds since epoch
+        .append_pair("start_date", "1") // "-1" | "1"
+        .append_pair("end_date", "1771617810") // "-1" | "1771617810"
+        .append_pair("date_range_type", "include") // "all" | "include" | "exclude"
         .append_pair("filter", "recent")
         .append_pair("language", "english")
         .append_pair("l", "english")
@@ -94,19 +113,18 @@ fn get_url(app_id: &u32, cursor: &String) -> String {
         .finish();
     let query = encoded.to_string();
 
-    let url = format!("{base_url}?{query}");
-
-    println!("url: {}", url);
-
-    url
+    format!("{base_url}?{query}")
 }
 
 fn write_to_file(file: &mut LineWriter<File>, reviews: &JsonValue) -> std::io::Result<()> {
     for review in reviews.members() {
+        let creation_timestamp = &review["timestamp_created"];
         let review_id = &review["recommendationid"];
         let review_text = &review["review"];
 
-        // println!("Writing review {review_id}...");
+        if creation_timestamp.as_u32().unwrap() > 1771617810 {
+            panic!("[ERROR] Review creation_date is more recent than end_date filter! Exiting.");
+        }
 
         file.write_all(format!("Review {review_id}:\n{review_text}\n\n").as_bytes())?;
 
